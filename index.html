@@ -2,8 +2,15 @@
 <html>
 <head>
     <title>01.01 - Basic scene</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+    <script src="jquery-csv.js"></script>
     <script src="Fichiers/libs/three.js"></script>
     <script src="Fichiers/libs/OrbitControls.js"></script>
+ 	<script src="Fichiers/libs/EffectComposer.js"></script>
+ 	<script src="Fichiers/libs/RenderPass.js"></script>
+ 	<script src="Fichiers/libs/CopyShader.js"></script>
+ 	<script src="Fichiers/libs/ShaderPass.js"></script>
+ 	<script src="Fichiers/libs/MaskPass.js"></script>
     <style>
         body {
             /* set margin to 0 and overflow to hidden, to go fullscreen */
@@ -18,7 +25,43 @@
     var renderer;
     var scene;
     var camera;
-    var cube;
+    var earth;
+    var clouds;
+    var moon;
+ 	var r = 30;
+    var theta = 0;
+    var dTheta = 2 * Math.PI / 1000;
+    var collidableMeshList = [];
+    var previewPointer = null;
+
+	function addCitie(name,longitude,latitude){
+		pointer = new THREE.Mesh(
+	        new THREE.SphereGeometry(0.075, 0.075, 0.075),
+	        new THREE.MeshPhongMaterial({color: 0xcc0000})
+	    );
+
+	    pointer.position.set(12.742, 0, 0); // rotating 00j should set (X > 0, 0, 0)
+	    pointer.name = name;
+
+	    pointer.quaternion.setFromUnitVectors(
+	        new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 0, 0)
+	    );
+
+	    marker = new THREE.Object3D();
+	    marker.name = name;
+
+	    marker.add(pointer);
+
+	    collidableMeshList.push(pointer);
+
+	    earth.add(marker);
+
+		var rad = Math.PI / 180;
+
+	    marker.quaternion.setFromEuler(
+	    	new THREE.Euler(0, longitude * rad, latitude * rad, "YZX")
+	    ); 
+	}
 
     /**
      * Initializes the scene, camera and objects. Called when the window is
@@ -38,50 +81,147 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMapEnabled = true;
 
-        // create the ground plane
-        var planeGeometry = new THREE.PlaneBufferGeometry(20, 20);
-        //var planeMaterial = new THREE.MeshLambertMaterial({color: 0xffffff});
-        var matexture = THREE.ImageUtils.loadTexture("Fichiers/textures/soil_normal.jpg");
-        var planeMaterial = new THREE.MeshBasicMaterial({map: matexture});
-        var plane = new THREE.Mesh(planeGeometry, planeMaterial);
-        plane.receiveShadow = true;
 
-        // rotate and position the plane
-        plane.rotation.x = -0.5 * Math.PI;
-        plane.position.x = 0;
-        plane.position.y = -10;
-        plane.position.z = 0;
+        /* EARTH */
 
-        // add the plane to the scene
-        scene.add(plane);
 
-        // create a cube
-        var cubeGeometry = new THREE.BoxGeometry(5, 5, 5);
-        var cubeMaterial = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.5});
-        cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+        // create the earth
+        var earthGeometry = new THREE.SphereGeometry(12.742, 50, 50);
+        var earthTexture = THREE.ImageUtils.loadTexture("Fichiers/textures/planets/earthmap4k.jpg");
+        var earthMaterial = new THREE.MeshPhongMaterial({map: earthTexture});
+        var normalMap = THREE.ImageUtils.loadTexture("Fichiers/textures/planets/earth_normalmap_flat4k.jpg");
+        earthMaterial.normalMap = normalMap;
+        var specularMap = THREE.ImageUtils.loadTexture("Fichiers/textures/planets/earthspec4k.jpg");
+        earthMaterial.specularMap = specularMap;
+        earth = new THREE.Mesh(earthGeometry, earthMaterial);
 
-        cube.castShadow = true;
+        // add the earth to the scene
+        scene.add(earth);
 
-        // add the cube to the scene
-        scene.add(cube);
+		$.ajax({
+		    url: "cities.csv",
+		    dataType: "text",
+		    success: function(data) {
+		    	var cities = $.csv.toArrays(data);
 
-        // add spotlight for the shadows
-        var spotlight = new THREE.AmbientLight(0xffffff);
-        spotlight.position.set(10, 20, 20);
-        spotlight.shadowCameraNear = 20;
-        spotlight.shadowCameraFar = 50;
-        spotlight.castShadow = true;
+		    	console.log(cities);
 
-        scene.add(spotlight);
+                for (var i = 1; i <= cities.length; i++) {
+                	addCitie(cities[i][0], cities[i][1], cities[i][2]);
+                }
+		    }
+		});
+
+
+        // create the clouds
+        var cloudsGeometry = new THREE.SphereGeometry(12.895, 50, 50);
+        var cloudsTexture = THREE.ImageUtils.loadTexture("Fichiers/textures/planets/fair_clouds_4k.png");
+        var cloudsMaterial = new THREE.MeshPhongMaterial({map: cloudsTexture, transparent: true, opacity: 0.6});
+        clouds = new THREE.Mesh(cloudsGeometry, cloudsMaterial);
+
+        // add the clouds to the scene
+        scene.add(clouds);
+
+        clouds.position.x = earth.position.x;
+
+
+        /* MOON */
+
+
+        // create the moon
+        var moonGeometry = new THREE.SphereGeometry(3.474, 50, 50);
+        var moonTexture = THREE.ImageUtils.loadTexture("Fichiers/textures/planets/moonbump4k.jpg");
+        var moonMaterial = new THREE.MeshPhongMaterial({map: moonTexture});
+        moon = new THREE.Mesh(moonGeometry, moonMaterial);
+
+        // add the moon to the scene
+        scene.add(moon);
+
+        // define new position of the moon
+        moon.position.x = 57.6;
+
+
+        // create ambient light
+        var ambientLight = new THREE.AmbientLight(0x303030);
+
+        // add ambient light to the scene
+        scene.add(ambientLight);
+
+
+        // add directional light
+        var directionalLight = new THREE.DirectionalLight(0xffffff);
+        directionalLight.position.set(15, 30, 30);
+
+        // add directionalLigne to the scene
+        scene.add(directionalLight);
+
 
         // position and point the camera to the center of the scene
-        camera.position.x = 15;
+        camera.position.x = 30;
         camera.position.y = 16;
         camera.position.z = 13;
         camera.lookAt(scene.position);
 
         // add controls
         cameraControl = new THREE.OrbitControls(camera);
+        cameraControl.minDistance = 20;
+        cameraControl.maxDistance = 100;
+
+        // add background using camera
+        cameraBG = new THREE.OrthographicCamera(-window.innerWidth, window.innerWidth, window.innerHeight, -window.innerHeight, -10000, 10000);
+        cameraBG.position.z = 50;
+        sceneBG = new THREE.Scene();
+
+        var materialColor = new THREE.MeshBasicMaterial({ map: THREE.ImageUtils.loadTexture("Fichiers/textures/starry-deep-outer-space-galaxy.jpg"), depthTest: false });
+        var bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), materialColor);
+        bgPlane.position.z = -100;
+        bgPlane.scale.set(window.innerWidth * 2, window.innerHeight * 2, 1);
+        sceneBG.add(bgPlane);
+
+        // setup the composer steps
+        // first render the background
+        var bgPass = new THREE.RenderPass(sceneBG, cameraBG);
+
+        // next render the scene (rotating earth), without clearing the current output
+        var renderPass = new THREE.RenderPass(scene, camera);
+        renderPass.clear = false;
+
+        // finally copy the result to the screen
+        var effectCopy = new THREE.ShaderPass(THREE.CopyShader);
+        effectCopy.renderToScreen = true;
+
+        // add thes passes  to the composer
+        composer = new THREE.EffectComposer(renderer);
+        composer.addPass(bgPass);
+        composer.addPass(renderPass);
+        composer.addPass(effectCopy);
+
+        var projector = new THREE.Projector();
+
+        function onDocumentMouseDown(event) {
+        	event.preventDefault();
+
+        	var vector = new THREE.Vector3((event.clientX / window.innerWidth) * 2 - 1, - (event.clientY / window.innerHeight) * 2 + 1, 0.5);
+        	projector.unprojectVector(vector, camera);
+
+        	var raycaster = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
+        	var intersects = raycaster.intersectObjects(collidableMeshList);
+
+        	if (intersects.length > 0) {
+        		intersects[0].object.material.color = new THREE.Color(0xffff00);
+        		previewPointer = intersects[0];
+
+        		$("#citieName").html(intersects[0]["object"].name);
+        	}
+        	else {
+        		previewPointer.object.material.color = new THREE.Color(0xcc0000);
+        		$("#citieName").html("");
+        	}
+        }
+
+        //window.onmousedown = onDocumentMouseDown;
+        window.onmousemove = onDocumentMouseDown;
+
 
         // add the output of the renderer to the html element
         document.body.appendChild(renderer.domElement);
@@ -96,23 +236,32 @@
      * for future renders
      */
     function render() {
-    	var rotSpeed = 0.01;
-    	
-    	camera.position.x = camera.position.x * Math.cos(rotSpeed) + camera.position.z * Math.sin(rotSpeed);
-    	camera.position.z = camera.position.z * Math.cos(rotSpeed) - camera.position.x * Math.sin(rotSpeed);
+		var earthRotationSpeed = 0.001;
+		var cloudsRotationSpeed = 0.0007;
+
+      	theta += dTheta;
+
+    	earth.rotation.y -= earthRotationSpeed;
+      	clouds.rotation.y -= cloudsRotationSpeed;
+
+      	moon.position.x = r*Math.cos(theta);
+    	moon.position.z = r*Math.sin(theta);
+
     	camera.lookAt(scene.position);
+    	moon.lookAt(earth.position);
 
-        // update stats
-        //stats.update();
-
-        // update the camera
 		cameraControl.update();
 
-        // and render the scene
-		renderer.render(scene, camera);
+		// and render the scene, renderer shouldn't autocloear, we let the composer steps do that themselves
+		// rendering is now done throught the composer, which executes the render steps
+        renderer.autoClear = false;
+        composer.render();
 
         // render using requestAnimationFrame
         requestAnimationFrame(render);
+
+        // and render the scene
+		renderer.render(scene, camera);
     }
 
 
@@ -133,5 +282,6 @@
 
 </script>
 <body>
+	<h1 id="citieName" style="position:absolute; width:100%; text-align:center; background:white; opacity:0.75;"></h1>
 </body>
 </html>
